@@ -109,3 +109,82 @@ class TestAppLogic:
 
         assert exc_info.value.status_code == 400
         assert "Invalid JSON response" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_move_file_between_kbs_success(self, app_logic, mock_client):
+        """Test successful file move between knowledge bases."""
+        file_id = "test-file-123"
+        source_kb_id = "source-kb-456"
+        dest_kb_id = "dest-kb-789"
+
+        # Mock the API methods
+        mock_client.remove_file_from_knowledge_base = AsyncMock(return_value=True)
+        mock_client.add_file_to_knowledge_base = AsyncMock(return_value=True)
+
+        # Execute the move
+        await app_logic.move_file_between_kbs(file_id, source_kb_id, dest_kb_id)
+
+        # Verify both API calls were made with correct parameters
+        mock_client.remove_file_from_knowledge_base.assert_called_once_with(source_kb_id, file_id)
+        mock_client.add_file_to_knowledge_base.assert_called_once_with(dest_kb_id, file_id)
+
+    @pytest.mark.asyncio
+    async def test_move_file_without_source_kb(self, app_logic, mock_client):
+        """Test moving a file without specifying source KB (just adds to destination)."""
+        file_id = "test-file-123"
+        dest_kb_id = "dest-kb-789"
+
+        # Mock the API method
+        mock_client.add_file_to_knowledge_base = AsyncMock(return_value=True)
+        mock_client.remove_file_from_knowledge_base = AsyncMock()
+
+        # Execute the move without source KB
+        await app_logic.move_file_between_kbs(file_id, None, dest_kb_id)
+
+        # Verify only add was called, not remove
+        mock_client.remove_file_from_knowledge_base.assert_not_called()
+        mock_client.add_file_to_knowledge_base.assert_called_once_with(dest_kb_id, file_id)
+
+    @pytest.mark.asyncio
+    async def test_move_file_remove_fails(self, app_logic, mock_client):
+        """Test handling when removing from source KB fails."""
+        from kbmanager.exceptions import FileOperationError
+        
+        file_id = "test-file-123"
+        source_kb_id = "source-kb-456"
+        dest_kb_id = "dest-kb-789"
+
+        # Mock remove to fail
+        mock_client.remove_file_from_knowledge_base = AsyncMock(
+            side_effect=APIError("Failed to remove", status_code=404)
+        )
+
+        # Execute and expect FileOperationError
+        with pytest.raises(FileOperationError) as exc_info:
+            await app_logic.move_file_between_kbs(file_id, source_kb_id, dest_kb_id)
+
+        assert "Failed to remove file from source KB" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_move_file_add_fails_after_remove(self, app_logic, mock_client):
+        """Test handling when adding to destination KB fails after successful remove."""
+        from kbmanager.exceptions import FileOperationError
+        
+        file_id = "test-file-123"
+        source_kb_id = "source-kb-456"
+        dest_kb_id = "dest-kb-789"
+
+        # Mock remove to succeed but add to fail
+        mock_client.remove_file_from_knowledge_base = AsyncMock(return_value=True)
+        mock_client.add_file_to_knowledge_base = AsyncMock(
+            side_effect=APIError("Failed to add", status_code=400)
+        )
+
+        # Execute and expect FileOperationError with warning about orphaned file
+        with pytest.raises(FileOperationError) as exc_info:
+            await app_logic.move_file_between_kbs(file_id, source_kb_id, dest_kb_id)
+
+        error_msg = str(exc_info.value)
+        assert "Failed to add file to destination KB" in error_msg
+        assert "WARNING" in error_msg
+        assert "removed from source KB" in error_msg

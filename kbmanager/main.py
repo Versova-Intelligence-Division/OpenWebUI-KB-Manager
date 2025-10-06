@@ -221,6 +221,38 @@ async def update_file(ctx: CLIContext, file_id, new_file_path):
 
 @cli.command()
 @click.argument("file_id")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.pass_obj
+@coro
+async def get_file(ctx: CLIContext, file_id, json_output):
+    """
+    Gets details about a specific file by its ID (useful for checking if a file exists).
+    """
+    ctx.init_api_client_and_app_logic()
+    try:
+        file_info = await ctx.api_interface.get_file_by_id(file_id)
+        if json_output:
+            import json
+            # Convert to dict - file_info might be a model object
+            if hasattr(file_info, 'to_dict'):
+                file_dict = file_info.to_dict()
+            else:
+                file_dict = {"info": str(file_info)}
+            click.echo(json.dumps(file_dict, indent=2))
+        else:
+            click.echo(f"File found: {file_id}")
+            if hasattr(file_info, 'filename'):
+                click.echo(f"  Filename: {file_info.filename}")
+            if hasattr(file_info, 'user_id'):
+                click.echo(f"  User ID: {file_info.user_id}")
+            click.echo(f"  Full info: {file_info}")
+    except APIError as e:
+        logger.error(f"Could not get file: {e}")
+        click.echo(f"Error: File not found or inaccessible: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.argument("file_id")
 @click.pass_obj
 @coro
 async def delete_file(ctx: CLIContext, file_id):
@@ -233,6 +265,49 @@ async def delete_file(ctx: CLIContext, file_id):
         await ctx.app_logic.delete_file(file_id)
     except APIError as e:
         logger.error(f"Could not delete file: {e}")
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.argument("file_id")
+@click.argument("destination_kb_id")
+@click.option("--from-kb", "source_kb_id", help="Source knowledge base ID (for reference only - file will be COPIED, not moved).")
+@click.option("--skip-verify", is_flag=True, help="Skip pre-flight KB verification checks (not recommended).")
+@click.pass_obj
+@coro
+async def move_file(ctx: CLIContext, file_id, destination_kb_id, source_kb_id, skip_verify):
+    """
+    ⚠️  CRITICAL UPDATE: This command now COPIES files instead of moving them!
+    
+    Due to OpenWebUI API limitations (removing a file from a KB deletes it entirely),
+    this command has been changed to COPY files to the destination KB while leaving
+    them in the source KB.
+    
+    FILE_ID is the ID of the file to copy.
+    DESTINATION_KB_ID is the target knowledge base ID.
+    
+    The file will exist in BOTH the source and destination KBs after this operation.
+    
+    ⚠️  WARNING: Do NOT manually remove files from a KB unless you're certain they
+    exist in other KBs, as removal DELETES the file entirely from the system!
+    
+    Use --from-kb to specify the source KB for reference purposes.
+    Safety checks are performed by default to verify KBs exist.
+    """
+    ctx.init_api_client_and_app_logic()
+    
+    if skip_verify:
+        click.echo(click.style("⚠️  Warning: Skipping pre-flight verification checks", fg='yellow'))
+    
+    if source_kb_id:
+        click.echo(f"Copying file '{file_id}' from KB '{source_kb_id}' to KB '{destination_kb_id}'...")
+    else:
+        click.echo(f"Adding file '{file_id}' to KB '{destination_kb_id}'...")
+    
+    try:
+        await ctx.app_logic.move_file_between_kbs(file_id, source_kb_id, destination_kb_id, skip_verify=skip_verify)
+    except (APIError, FileOperationError) as e:
+        logger.error(f"Could not copy file: {e}")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 

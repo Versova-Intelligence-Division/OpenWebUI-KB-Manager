@@ -25,6 +25,12 @@ try:
     from kbmanager.open_web_ui_client.api.knowledge.add_files_to_knowledge_batch_api_v1_knowledge_id_files_batch_add_post import (
         asyncio_detailed as add_files_to_kb_batch_async_detailed,
     )
+    from kbmanager.open_web_ui_client.api.knowledge.add_file_to_knowledge_by_id_api_v1_knowledge_id_file_add_post import (
+        asyncio_detailed as add_file_to_kb_async_detailed,
+    )
+    from kbmanager.open_web_ui_client.api.knowledge.remove_file_from_knowledge_by_id_api_v1_knowledge_id_file_remove_post import (
+        asyncio_detailed as remove_file_from_kb_async_detailed,
+    )
 
     # API operation functions
     from kbmanager.open_web_ui_client.api.knowledge.create_new_knowledge_api_v1_knowledge_create_post import (
@@ -97,6 +103,8 @@ if not _client_imported_successfully:
     create_kb_async_detailed = _uninitialized_method
     list_kbs_async_detailed = _uninitialized_method
     add_files_to_kb_batch_async_detailed = _uninitialized_method
+    add_file_to_kb_async_detailed = _uninitialized_method
+    remove_file_from_kb_async_detailed = _uninitialized_method
     get_files_by_kb_id_async_detailed = _uninitialized_method
     upload_file_async_detailed = _uninitialized_method
     delete_file_async_detailed = _uninitialized_method
@@ -215,6 +223,32 @@ class KBManagerAPIInterface:
             )
         return True  # Or some useful response status
 
+    async def add_file_to_knowledge_base(self, kb_id: str, file_id: str):
+        """Add a single file to a knowledge base."""
+        file_form = KnowledgeFileIdForm(file_id=file_id)
+        response = await add_file_to_kb_async_detailed(id=kb_id, body=file_form, client=self._client)
+        if response.status_code != 200:
+            error_message = response.content.decode("utf-8", errors="ignore")
+            raise APIError(
+                f"Failed to add file to KB: {error_message}",
+                status_code=response.status_code,
+                response_content=error_message,
+            )
+        return True
+
+    async def remove_file_from_knowledge_base(self, kb_id: str, file_id: str):
+        """Remove a single file from a knowledge base."""
+        file_form = KnowledgeFileIdForm(file_id=file_id)
+        response = await remove_file_from_kb_async_detailed(id=kb_id, body=file_form, client=self._client)
+        if response.status_code != 200:
+            error_message = response.content.decode("utf-8", errors="ignore")
+            raise APIError(
+                f"Failed to remove file from KB: {error_message}",
+                status_code=response.status_code,
+                response_content=error_message,
+            )
+        return True
+
     async def delete_file_by_id(self, file_id: str):
         response = await delete_file_async_detailed(id=file_id, client=self._client)
         if response.status_code != 200:
@@ -270,6 +304,22 @@ class KBManagerAPIInterface:
             updated_file = response.parsed
             pbar.update(len(content_bytes))
         return updated_file
+
+    async def get_file_by_id(self, file_id: str):
+        """Get file details by file ID to verify it exists."""
+        from kbmanager.open_web_ui_client.api.files.get_file_by_id_api_v1_files_id_get import (
+            asyncio_detailed as get_file_by_id_async_detailed,
+        )
+        
+        response = await get_file_by_id_async_detailed(id=file_id, client=self._client)
+        if response.status_code != 200:
+            error_message = response.content.decode("utf-8", errors="ignore")
+            raise APIError(
+                f"Failed to get file {file_id}: {error_message}",
+                status_code=response.status_code,
+                response_content=error_message,
+            )
+        return response.parsed
 
     async def list_files_for_knowledge_base(self, kb_id: str) -> List[FileMetadataResponse]:
         response = await get_files_by_kb_id_async_detailed(id=kb_id, client=self._client)

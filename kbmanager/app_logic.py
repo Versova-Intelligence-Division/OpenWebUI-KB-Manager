@@ -331,3 +331,82 @@ class AppLogic:
         except Exception as e:
             logger.error(f"An unexpected error occurred while processing KB files for '{kb_id}': {e}", exc_info=True)
             raise
+
+    async def verify_kb_exists(self, kb_id: str) -> bool:
+        """
+        Verifies that a knowledge base exists by attempting to retrieve it.
+        Returns True if it exists, raises APIError if it doesn't.
+        """
+        try:
+            await self._api.list_files_for_knowledge_base(kb_id)
+            return True
+        except APIError as e:
+            logger.error(f"Knowledge base '{kb_id}' not found or inaccessible: {e}")
+            raise FileOperationError(f"Knowledge base '{kb_id}' not found or inaccessible. Please verify the KB ID is correct.") from e
+
+    async def move_file_between_kbs(self, file_id: str, source_kb_id: Optional[str], destination_kb_id: str, skip_verify: bool = False):
+        """
+        ⚠️  CRITICAL: This is now a COPY operation, not a true move!
+        
+        Due to OpenWebUI API design, removing a file from a KB DELETES it entirely.
+        This method now:
+        1. Adds the file to the destination KB (creates a copy/reference)
+        2. If source_kb_id is provided, warns but does NOT remove from source
+        
+        The file will exist in BOTH KBs after this operation. Manual removal from
+        the source KB is required if desired, but BE WARNED: removing a file from
+        its last KB will DELETE it permanently!
+        
+        Args:
+            file_id: The ID of the file to copy
+            source_kb_id: Optional source KB ID (currently only used for display/context)
+            destination_kb_id: The destination KB ID to add the file to
+            skip_verify: If True, skip pre-flight KB verification checks (not recommended)
+        """
+        logger.warning(f"IMPORTANT: move-file now performs a COPY operation due to OpenWebUI API limitations")
+        
+        if source_kb_id:
+            click.echo(click.style(f"⚠️  IMPORTANT: This will COPY the file to the destination KB.", fg='yellow'))
+            click.echo(click.style(f"   The file will remain in the source KB '{source_kb_id}'.", fg='yellow'))
+            click.echo(click.style(f"   DO NOT manually remove it unless you're sure it's in multiple KBs!", fg='yellow'))
+            click.echo()
+        
+        logger.info(f"Copying file ID '{file_id}' to KB '{destination_kb_id}'")
+        
+        # SAFETY CHECK: Verify destination KB exists before doing anything (unless skipped)
+        if not skip_verify:
+            click.echo(f"Verifying destination KB '{destination_kb_id}' exists...")
+            try:
+                await self.verify_kb_exists(destination_kb_id)
+                click.echo(f"✓ Destination KB '{destination_kb_id}' verified")
+            except FileOperationError as e:
+                logger.error(f"Pre-flight check failed: {e}")
+                raise
+        
+        # Verify source KB if specified (for context, we won't remove from it)
+        if source_kb_id and not skip_verify:
+            click.echo(f"Verifying source KB '{source_kb_id}' exists...")
+            try:
+                await self.verify_kb_exists(source_kb_id)
+                click.echo(f"✓ Source KB '{source_kb_id}' verified")
+            except FileOperationError as e:
+                logger.error(f"Pre-flight check failed: {e}")
+                raise
+        
+        # Add the file to the destination KB (this creates a copy/reference)
+        logger.info(f"Adding file '{file_id}' to destination KB '{destination_kb_id}'")
+        try:
+            await self._api.add_file_to_knowledge_base(destination_kb_id, file_id)
+            click.echo(f"✓ Successfully added file '{file_id}' to destination KB '{destination_kb_id}'")
+        except APIError as e:
+            logger.error(f"Failed to add file to destination KB: {e}")
+            error_msg = f"Failed to add file to destination KB '{destination_kb_id}': {e}"
+            raise FileOperationError(error_msg) from e
+        
+        if source_kb_id:
+            click.echo()
+            click.echo(click.style(f"✅ File copied to KB '{destination_kb_id}'", fg='green'))
+            click.echo(click.style(f"ℹ️  Note: File still exists in source KB '{source_kb_id}'", fg='cyan'))
+            click.echo(click.style(f"   If you want to remove it from the source, use a separate command (at your own risk).", fg='cyan'))
+        else:
+            click.echo(click.style(f"✅ Successfully added file '{file_id}' to KB '{destination_kb_id}'", fg='green'))
