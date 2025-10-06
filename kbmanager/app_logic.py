@@ -239,7 +239,10 @@ class AppLogic:
         logger.info(f"Updating content for file ID {file_id} from {new_file_path.name}")
         try:
             updated_file = await self._api.update_file_content_by_id(file_id, new_file_path)
-            click.echo(f"Successfully updated content for '{updated_file.filename}' (ID: {updated_file.id}).")
+            # Response is a dict, not an object
+            filename = updated_file.get('filename', 'unknown')
+            file_id_returned = updated_file.get('id', file_id)
+            click.echo(f"Successfully updated content for '{filename}' (ID: {file_id_returned}).")
         except (APIError, FileOperationError) as e:
             logger.error(f"Failed to update file content for ID {file_id}: {e}")
             click.echo(f"Error updating file content: {e}", err=True)

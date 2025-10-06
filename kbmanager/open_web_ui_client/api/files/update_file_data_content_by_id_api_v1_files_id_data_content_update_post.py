@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Dict
 
 import httpx
 
@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.content_form import ContentForm
 from ...models.http_validation_error import HTTPValidationError
 from ...types import Response
+from ...models.file_model import FileModel
 
 
 def _get_kwargs(
@@ -17,16 +18,15 @@ def _get_kwargs(
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
-    _kwargs: dict[str, Any] = {
-        "method": "post",
-        "url": f"/api/v1/files/{id}/data/content/update",
+    _kwargs: Dict[str, Any] = {
+        "method": "POST",
+        "url": "/api/v1/files/{id}/data/content/update".format(
+            id=id,
+        ),
     }
 
     _kwargs["json"] = body.to_dict()
 
-    headers["Content-Type"] = "application/json"
-
-    _kwargs["headers"] = headers
     return _kwargs
 
 

@@ -39,6 +39,7 @@ try:
     from kbmanager.open_web_ui_client.client import AuthenticatedClient
     from kbmanager.open_web_ui_client.models import (
         BodyUploadFileApiV1FilesPost,
+        ContentForm,
         FileMetadataResponse,
         FileModelResponse,
         KnowledgeFileIdForm,
@@ -226,9 +227,18 @@ class KBManagerAPIInterface:
         return True
 
     async def update_file_content_by_id(self, file_id: str, new_file_path: Path):
-        content = self._get_file_content(new_file_path)
+        content_bytes = self._get_file_content(new_file_path)
+        # Decode bytes to string - try UTF-8 first, fall back to latin-1 if needed
+        try:
+            content_str = content_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            content_str = content_bytes.decode('latin-1')
+        
+        # Create ContentForm object as expected by the API
+        content_form = ContentForm(content=content_str)
+        
         with tqdm(
-            total=len(content),
+            total=len(content_bytes),
             unit="B",
             unit_scale=True,
             desc=f"Updating {file_id}",
@@ -236,7 +246,7 @@ class KBManagerAPIInterface:
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} {rate_fmt}",
             leave=False,
         ) as pbar:
-            response = await update_file_content_async_detailed(id=file_id, body=content, client=self._client)
+            response = await update_file_content_async_detailed(id=file_id, body=content_form, client=self._client)
             if response.status_code != 200 or not response.parsed:
                 error_message = response.content.decode("utf-8", errors="ignore")
                 if response.status_code == 422:
@@ -258,7 +268,7 @@ class KBManagerAPIInterface:
                     response_content=error_message,
                 )
             updated_file = response.parsed
-            pbar.update(len(content))
+            pbar.update(len(content_bytes))
         return updated_file
 
     async def list_files_for_knowledge_base(self, kb_id: str) -> List[FileMetadataResponse]:
