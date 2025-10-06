@@ -31,7 +31,9 @@ def get_actual_client_instance(config_manager):
                 "API key or base URL is missing. Please ensure configuration is loaded or run 'kb-manager setup'."
             )
 
-        return AuthenticatedClient(base_url=config_manager.base_url, token=config_manager.api_key)
+        return AuthenticatedClient(
+            base_url=config_manager.base_url, token=config_manager.api_key, follow_redirects=True
+        )
     except ConfigError as e:
         logger.error(f"Configuration error during client initialization: {e}")
         raise
